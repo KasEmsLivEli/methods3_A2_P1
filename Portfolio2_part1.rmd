@@ -1,0 +1,280 @@
+---
+title: "Assignment 2 - Language Development in ASD - Part 1 - Explaining development"
+author: "Group 8"
+date: "16.09.20"
+output: html_document
+---
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(include = FALSE)
+```
+
+# Let's go
+
+### Loading the relevant libraries
+
+Load necessary libraries : what will you need?
+- e.g. something to deal with the data
+- e.g. mixed effects models
+- e.g. something to plot with
+
+```{r Load Libraries, include = FALSE}
+pacman::p_load(tidyverse, sjPlot, MuMIn, pastecs, expss, lme4)
+install.packages(c("data.table", "expss"), type = "source")
+library("expss")
+install.packages("magrittr")
+library("magrittr")
+library("dplyr")
+pacman::p_load(lavaan, semPlot)
+```
+
+
+
+```{r}
+# Loading the data into a data frame
+df <- read.csv("df_portfolio1.csv")
+df$X1 <- NULL
+```
+
+### Characterize the participants (Exercise 1)
+
+Identify relevant variables: participants demographic characteristics, diagnosis, ADOS, Verbal IQ, Non Verbal IQ, Socialization, Visit, Number of words used, Number of unique words used, mean length of utterance in both child and parents.
+
+Make sure the variables are in the right format.
+
+Describe the characteristics of the two groups of participants and whether the two groups are well matched.
+
+
+
+```{r descriptive stats, include = FALSE}
+
+#Making data frames for each diagnosis type
+TD <- df  %>% filter(Diagnosis == "TD")
+ASD <- df  %>% filter(Diagnosis == "ASD")
+
+TD$X <- NULL
+ASD$X <- NULL
+
+#Finding out how many subjects there were with TD. There are 35 subjects with TD
+unTD <- unique(TD$SUBJ)
+length(unTD)
+
+
+# Finding out the amount of subjects of each ethinicity category in the TD group. The results show that the subjects were mainly white. 
+count(TD, Ethnicity == "White")
+
+# Distribution of gender in TD group. The result shows us that the TD group contains mostly males 
+count(TD, Gender == "M")
+
+
+#Finding out how many subjects there were with ASD. There are 31 subjects with ASD
+unASD <- unique(ASD$SUBJ)
+length(unASD)
+
+# Finding out the amount of subjects of each ethinicity category in the ASD group. The results show that the subjects were mainly white. Slightly more variation in this group than in the TD group. 
+count(ASD, Ethnicity == "White")
+
+# Distribution of gender in ASD group. The result shows us that the ASD group contains mostly males 
+count(ASD, Gender == "M")
+
+
+#Making data frames for each group for visit 1, in order to only have one data point per subject
+TD1 <- TD  %>% filter(VISIT == "1")
+ASD1 <- ASD  %>% filter(VISIT == "1")
+
+# Finding mean age of TD subjects at their first visit. 20.38
+mean(TD1$Age, na.rm=T)
+
+#The mean age at visit one for ASD children was 33.03 months
+mean(ASD1$Age)
+
+
+```
+
+
+## Let's test hypothesis 1: Children with ASD display a language impairment  (Exercise 2)
+
+### Hypothesis: The child's MLU changes: i) over time, ii) according to diagnosis
+
+Let's start with a simple mixed effects linear model
+
+Remember to plot the data first and then to run a statistical test.
+- Which variable(s) should be included as fixed factors?
+- Which variable(s) should be included as random factors?
+
+```{r ex2, include = FALSE}
+#plot of change in MLU over time 
+time <- ggplot(df, aes(x = VISIT, y = CHI_MLU, shape = Diagnosis, fill = Diagnosis, col=Diagnosis)) +
+ geom_point()+
+ geom_smooth(method = lm) + ggtitle("Change in MLU over time for each diagnosis")
+
+time
+
+#Linear mixed effects model 
+hyp1 <- lmerTest::lmer(CHI_MLU ~ VISIT*Diagnosis + (1|SUBJ), data = df, REML = F)
+
+summary(hyp1)
+
+#Finding R squared 
+MuMIn::r.squaredGLMM(hyp1)
+```
+
+
+How would you evaluate whether the model is a good model?
+The model is not really good. None of the fixed effects are significant, and thus the model is not a good one for predicting child MLU.
+
+Not too good, right? Let's check whether a growth curve model is better.
+Remember: a growth curve model assesses whether changes in time can be described by linear, or quadratic, or cubic (or... etc.) components.
+
+First build the different models, then compare them to see which one is better.
+
+```{r}
+#Building different growth curve models with visit in second, third and fourth degree. 
+hyp1_poly2 <- lmerTest::lmer(CHI_MLU ~ VISIT*Diagnosis +  I(VISIT^2)+ (1|SUBJ), data = df, REML = F)
+hyp1_poly3 <- lmerTest::lmer(CHI_MLU ~ VISIT*Diagnosis +  I(VISIT^3)+ (1|SUBJ), data = df, REML = F)
+hyp1_poly4 <- lmerTest::lmer(CHI_MLU ~ VISIT*Diagnosis +  I(VISIT^4)+ (1|SUBJ), data = df, REML = F)
+
+MuMIn::r.squaredGLMM(hyp1_poly2)
+
+AIC(hyp1_poly2, hyp1_poly3, hyp1_poly4)
+
+summary(hyp1_poly2)
+summary(hyp1_poly3)
+summary(hyp1_poly4)
+#The hyp1_poly3 model has the lowest AIC score, but we choose hyp1_poly2 for the sake of simplicity, and because the AIC values are very close to each other
+```
+
+
+Exciting right? Let's check whether the model is doing an alright job at fitting the data. Plot the actual CHI_MLU data against the predictions of the model fitted(model). 
+
+```{r}
+
+# Creating a data frame with the predicted values from the growth model
+pred_df <- data.frame(fitted(hyp1_poly2)) 
+
+#Finding the actual CHI_MLU values without NAs
+CHI_MLU <- df$CHI_MLU %>%  
+  na.exclude()            
+
+#Adding an extra column with the normal data to the data frame with predicted values
+pred_df$CHI_MLU <- CHI_MLU 
+
+#Plotting the fitted values against the actual values
+pred_df %>% 
+ggplot() + 
+  aes(x = CHI_MLU , y = fitted.hyp1_poly2.) + geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "Red") +
+  theme_classic() + ggtitle("Fitted values compared with predicted values of children's mean length of utterances")
+
+```
+
+Now it's time to report our results.
+Remember to report:
+- the estimates for each predictor (beta estimate, standard error, p-value)
+- A plain word description of the results
+- A plot of your model's predictions (and some comments on whether the predictions are sensible)
+
+[REPORT THE RESULTS]
+Linguistic development of children MLU is affected by ... [COMPLETE]
+
+
+## Let's test hypothesis 2: Parents speak equally to children with ASD and TD  (Exercise 3)
+
+### Hypothesis: Parental MLU changes: i) over time, ii) according to diagnosis
+
+```{r ex3, include = FALSE}
+#Visualising the data
+time_mot <- ggplot(df, aes(x = VISIT, y = MOT_MLU, col=Diagnosis, group = Diagnosis)) +
+ geom_point() +
+ geom_smooth(method = "lm", aes(group = Diagnosis)) +
+  labs(title = "Mothers' MLU as a function of time")
+
+
+print(time_mot)
+
+
+# Creating different models
+hyp2_lin <- lmerTest::lmer(MOT_MLU ~ VISIT*Diagnosis + (1|SUBJ), data = df, REML = F)
+hyp2_poly2 <- lmerTest::lmer(MOT_MLU ~ VISIT*Diagnosis +  I(VISIT^2)+ (1|SUBJ), data = df, REML = F)
+hyp2_poly3 <- lmerTest::lmer(MOT_MLU ~ VISIT*Diagnosis +  I(VISIT^3)+ (1|SUBJ), data = df, REML = F)
+
+
+#Comparing the models through AIC
+AIC(hyp2_lin, hyp2_poly2, hyp2_poly3)
+
+##The hyp2_poly3 model has the lowest AIC score, but we choose hyp2_poly2 for the sake of simplicity, and because the AIC values are very close to each other
+
+summary(hyp2_poly2)
+summary(hyp2_lin)
+summary(hyp2_poly3)
+```
+
+
+### Adding new variables (Exercise 4)
+
+Your task now is to figure out how to best describe the children linguistic trajectory. The dataset contains a bunch of additional demographic, cognitive and clinical variables (e.g.verbal and non-verbal IQ). Try them out and identify the statistical models that best describes your data (that is, the children's MLU). Describe how you selected the best model and send the code to run the model to Victor and Byurakn.
+
+
+```{r ex4, include = FALSE}
+
+# Creating different models and comparing which is the best one
+model_1 <- lmerTest::lmer(CHI_MLU ~ VISIT + Diagnosis + social_int_skills + (1|SUBJ), data = df, REML = F)
+summary(model_1)
+
+model_2 <- lmerTest::lmer(CHI_MLU ~ VISIT + Diagnosis + sev_aut_sympt + (1|SUBJ), data = df, REML = F)
+summary(model_2)
+
+model_3 <- lmerTest::lmer(CHI_MLU ~ VISIT + sev_aut_sympt + social_int_skills + (1|SUBJ), data = df, REML = F)
+summary(model_3)
+
+model_4 <- lmerTest::lmer(CHI_MLU ~ VISIT + sev_aut_sympt + social_int_skills + I(VISIT^2) + (1|SUBJ), data = df, REML = F)
+summary(model_4)
+
+model_5 <- lmerTest::lmer(CHI_MLU ~ VISIT * Diagnosis + sev_aut_sympt + social_int_skills + (1|SUBJ), data = df, REML = F)
+
+
+model_6 <- lmerTest::lmer(CHI_MLU ~ VISIT * sev_aut_sympt + social_int_skills + (1|SUBJ), data = df, REML = F)
+summary(model_6)
+
+model_6_poly <- lmerTest::lmer(CHI_MLU ~ VISIT * sev_aut_sympt + social_int_skills + I(VISIT^2) + (1|SUBJ), data = df, REML = F)
+summary(model_6_poly)
+
+model_7 <- lmerTest::lmer(CHI_MLU ~ VISIT * social_int_skills + sev_aut_sympt + (1|SUBJ), data = df, REML = F)
+summary(model_7)
+
+model_8 <- lmerTest::lmer(CHI_MLU ~ VISIT * sev_aut_sympt + social_int_skills + Gender + (1|SUBJ), data = df, REML = F)
+summary(model_8)
+
+model_9 <- lmerTest::lmer(CHI_MLU ~ VISIT * sev_aut_sympt + social_int_skills + Ethnicity + (1|SUBJ), data = df, REML = F)
+summary(model_9)
+
+AIC(model_1, model_2, model_3, model_4, model_5, model_6, model_6_poly, model_7, model_8, model_9)
+
+MuMIn::r.squaredGLMM(model_1)
+MuMIn::r.squaredGLMM(model_2)
+MuMIn::r.squaredGLMM(model_3)
+MuMIn::r.squaredGLMM(model_4)
+MuMIn::r.squaredGLMM(model_5)
+MuMIn::r.squaredGLMM(model_6)
+MuMIn::r.squaredGLMM(model_6_poly)
+MuMIn::r.squaredGLMM(model_7)
+MuMIn::r.squaredGLMM(model_8)
+MuMIn::r.squaredGLMM(model_9)
+
+#Comparing model 6 (our preferred model) to all the others
+anova(model_1, model_6)
+anova(model_2, model_6)
+anova(model_3, model_6)
+anova(model_4, model_6)
+anova(model_5, model_6)
+anova(model_6_poly, model_6)
+anova(model_7, model_6)
+anova(model_8, model_6)
+anova(model_9, model_6)
+
+```
+
+
+
+
